@@ -1,10 +1,10 @@
 library(tidyverse)
 library(janitor)
 library(tidytext)
-library(ggthemes)
 library(textdata)
 library(topicmodels)
 library(tvthemes)
+
 
 
 # Import data from the Tidy Tuesday Github Repository
@@ -44,13 +44,15 @@ tbl_avatar_topic_beta <- tbl_avatar_lda_topics %>% group_by(topic) %>%
   ungroup() %>% 
   arrange(topic, -beta)
 
+image_var <- "D:\\R for Data Science\\Scripts\\avatar_image.png"
+
 # Plotting - Terms/Words Versus the Beta Probability 
 p_topic_beta <- tbl_avatar_topic_beta %>% 
   ggplot(mapping = aes(x = reorder_within(term, beta, topic), 
                        y = beta, 
                        fill = as.factor(topic))) + 
   geom_col(show.legend = FALSE) + 
-  facet_wrap(~topic, scales = "free") + 
+  facet_wrap(~topic, scales = "free") +
   scale_x_reordered() + 
   coord_flip() + 
   theme_avatar() + 
@@ -59,10 +61,86 @@ p_topic_beta <- tbl_avatar_topic_beta %>%
        caption = "Avatar :: The Last Airbender | Tidy Tuesday (Week 33)") + 
   ggtitle(label = "Avatar::The Last Airbender", subtitle = "LDA Topic Modelling with k = 2 Topics")
 
+# Using background image of avatar
+# does not look impressive at all :(
+# p_topic_beta_background <- ggbackground(p_topic_beta, background = image_var, alpha = 0.02)
 
 p_topic_beta
 
-ggsave(filename = "D:\\R for Data Science\\R plots\\Tidy Tuesday - Avatar\\topic_model.png", plot = p_topic_beta)
+
+ggsave(filename = "D:\\R for Data Science\\R plots\\Tidy Tuesday - Avatar\\topic_model.png", 
+       plot = p_topic_beta)
+
+
+# Get the bing sentiments
+
+
+tbl_bing_sentiments <- get_sentiments("bing")
+
+tbl_avatar_sentiments <- inner_join(tbl_avatar_words, tbl_bing_sentiments, by = "word")
+
+
+# Positive Sentiments Analysis --------------------------------------------
+
+tbl_positive_sentiments <- tbl_avatar_sentiments %>% group_by(book, word, sentiment) %>% 
+  summarise(cnt = n()) %>%
+  ungroup() %>% 
+  filter(sentiment == "positive") %>%
+  group_by(book) %>%
+  top_n(n = 10, wt = cnt)
+
+tbl_positive_sentiments
+
+p_positive_words <- ggplot(data = tbl_positive_sentiments) + 
+  geom_col(mapping = aes(x = reorder_within(word, cnt, book), y = cnt, fill = book), show.legend = FALSE) +
+  facet_wrap(~book, scales = "free") + 
+  scale_x_reordered() + 
+  coord_flip() + 
+  scale_fill_brewer(palette = "Paired") + 
+  theme_avatar() + 
+  labs(x = "Terms/Words", 
+       y = "Count", 
+       caption = "Avatar :: The Last Airbender | Tidy Tuesday (Week 33)") + 
+  ggtitle(label = "Avatar::The Last Airbender", 
+          subtitle = "Top 10 Positive Sentiment Words by Book")
+
+p_positive_words
+
+
+ggsave(filename = "D:\\R for Data Science\\R plots\\Tidy Tuesday - Avatar\\positive_sentiments.png", 
+       plot = p_positive_words)
+
+
+# Negative Sentiment Analysis ----------------------------------
+
+
+tbl_negative_sentiments <- tbl_avatar_sentiments %>% group_by(book, word, sentiment) %>% 
+  summarise(cnt = n()) %>%
+  ungroup() %>% 
+  filter(sentiment == "negative") %>%
+  group_by(book) %>%
+  top_n(n = 10, wt = cnt)
+
+tbl_negative_sentiments
+
+p_negative_words <- ggplot(data = tbl_negative_sentiments) + 
+  geom_col(mapping = aes(x = reorder_within(word, cnt, book), y = cnt, fill = book), show.legend = FALSE) +
+  facet_wrap(~book, scales = "free") + 
+  scale_x_reordered() + 
+  coord_flip() + 
+  scale_fill_brewer(palette = "Paired") + 
+  theme_avatar() + 
+  labs(x = "Terms/Words", 
+       y = "Count", 
+       caption = "Avatar :: The Last Airbender | Tidy Tuesday (Week 33)") + 
+  ggtitle(label = "Avatar::The Last Airbender", 
+          subtitle = "Top 10 Negative Sentiment Words by Book")
+
+p_negative_words
+
+ggsave(filename = "D:\\R for Data Science\\R plots\\Tidy Tuesday - Avatar\\negative_sentiments.png", 
+       plot = p_negative_words)
+
 
 
 
