@@ -137,7 +137,7 @@ p_patchwork_plot
 
 # Save the Plot 
 
-ggsave(filename = "D:\\R for Data Science\\R plots\\Tidy Tuesday - Avatar\\positive_sentiments.png", 
+ggsave(filename = "D:\\R for Data Science\\R plots\\Tidy Tuesday - Avatar\\sentiment_analysis.png", 
        plot = p_patchwork_plot)
 
 
