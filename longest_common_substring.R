@@ -1,6 +1,6 @@
 # Function to find the longest common substring between two strings 
 
-fn_strcommon <- function(x1, x2) {
+fn_strcommon <- function(x1 = "", x2 = "") {
   i_list1 <- strsplit(x = x1, split = "", fixed = TRUE)
   len_list1 <- length(i_list1[[1]]) # length of first string
   i_list2 <- strsplit(x = x2, split = "", fixed = TRUE)
@@ -132,27 +132,42 @@ fn_strcommon <- function(x1, x2) {
   
   
   if(final_combo_string2[[1]] != "") {
-    print(paste("Longest Common Substring = ", paste0(final_combo_string2, collapse = ""), sep = ""))
+    #print(paste("Longest Common Substring = ", paste0(final_combo_string2, collapse = ""), sep = ""))
+    return(paste0(final_combo_string2, collapse = ""))
   } else {
-    print("No Common Substring")
+    #print("No Common Substring")
+    return("No Common Substring")
   }
 }
 
+# Testing Scripts ------------------------------------------
+# Create two vectors with all different combinations to test 
+# v1 and v2 -----------------------------------------------
 
-# Testing Scripts ---------------------
+v1 <- c("Data Science", 
+        "Data Science", 
+        "Data Wrangling", 
+        "Data Munging", 
+        "Data Munging", 
+        "Data", 
+        "", 
+        "Data Analysis", 
+        "", 
+        "Data Analysis")
+v2 <- c("Science", 
+        "Data", 
+        "Wrangking", 
+        "Munging", 
+        "Data", 
+        "Data", 
+        "", 
+        "", 
+        "Data Analysis", 
+        "Data Analysis")
 
-fn_strcommon("Data", "Data")
-fn_strcommon("Data", "Data Science")
-fn_strcommon("Science", "Data Science")
-fn_strcommon("Wranlging", "Data Wrangling")
-fn_strcommon("Munging", "Data Munging")
-fn_strcommon("", "Data Munging")
-# ----------------------
-fn_strcommon("Data Science", "Data")
-fn_strcommon("Data Science", "Science")
-fn_strcommon("Data Wrangling", "Wranlging")
-fn_strcommon("Data Munging", "Munging")
-fn_strcommon("Data Munging", "")
+# Call the function with element and check the results -----------
+purrr::map2_chr(.x = v1, .y = v2, .f = fn_strcommon)
 
-# ---------------------------
-fn_strcommon("", "")
+
+
+
