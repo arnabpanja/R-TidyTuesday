@@ -5,6 +5,9 @@ library(tidytext)
 library(textdata)
 library(ggforce)
 library(ggimage)
+library(topicmodels)
+library(patchwork)
+
 
 
 
@@ -73,7 +76,9 @@ p_beyonce <- ggplot(data = beyonce_sentiments) +
   guides(fill = guide_legend(nrow = 2, title = "Lyrics")) + 
   labs(title = "Beyonce - Sentiments")
   
-  
+ 
+p_beyonce
+ 
 
 # Save Beyonce Plot -------------------------------
 ggsave(filename = "D:\\R for Data Science\\R plots\\Beyonce_Taylor_Songs\\p_beyonce.png", plot = p_beyonce)
@@ -121,9 +126,116 @@ p_taylor_swift <- ggplot(data = taylor_swift_sentiments) +
   labs(title = "Taylor Swift - Sentiments")
 
 
+p_taylor_swift
+
 # Save Taylor Swifts Plot -------------------------------
 
 ggsave(filename = "D:\\R for Data Science\\R plots\\Beyonce_Taylor_Songs\\p_taylor_swift.png", plot = p_taylor_swift)
+
+
+
+# TOPIC MODELLING ----------------------------------------------
+
+# Beyonce Lyrics - Topic Modelling with 2 Topics ---------------
+
+
+# Un-nest and Cast the data as Document Term Matrix ------------------------
+
+beyonce_lyrics_dtm <- beyonce_lyrics_unnested %>% 
+  count(song_id, word, sort = TRUE) %>% 
+  cast_dtm(document = song_id, term = word, value = n)
+
+# Apply the Latent Dirichlet Modelling with K = 2 Topics ------------------------
+
+beyonce_lyrics_lda <- LDA(x = beyonce_lyrics_dtm, k = 2, control = list(seed = 1234))
+
+
+# Convert the object back to tibble after applying the tidy function -----
+
+beyonce_lyrics_topics <- as_tibble(tidy(x = beyonce_lyrics_lda, matrix = "beta"))
+
+
+
+# Plot the data ---------------------------------
+
+p_beyonce_topics <- beyonce_lyrics_topics %>% group_by(topic) %>% 
+  top_n(n = 5, wt = beta) %>%
+  ungroup() %>% 
+  arrange(topic, -beta) %>% 
+  mutate(topic = str_c("Beyonce Topic", topic, sep = " ")) %>% 
+  ggplot() + 
+  geom_segment(mapping = aes(x = 0, y = reorder_within(term, beta, topic), xend = beta, yend = reorder_within(term, beta, topic), colour = term), show.legend = FALSE, size = 1.0, na.rm = TRUE) + 
+  geom_point(mapping = aes(x = beta, y = reorder_within(term, beta, topic), colour = term), show.legend = FALSE, size = 3, na.rm = TRUE) + 
+  scale_y_reordered() + 
+  scale_color_brewer(palette = "Paired") + 
+  facet_wrap(facets = ~topic, scales = "free") + 
+  theme_solarized(light = FALSE, base_size = 10) + 
+  theme(axis.text = element_text(color = "goldenrod1"), 
+        axis.title = element_text(color = "goldenrod1", face = "bold.italic"), 
+        strip.text = element_text(face = "bold")) + 
+  labs(x = "Beta Probability", 
+       y = "")
+
+
+
+# Taylor Swift Lyrics - Topic Modelling with 2 Topics ---------------
+
+
+# Un-nest and Cast the data as Document Term Matrix ------------------------
+
+taylor_swift_lyrics_dtm <- taylor_swift_lyrics_unnested %>% 
+  count(album, word, sort = TRUE) %>% 
+  cast_dtm(document = album, term = word, value = n)
+
+
+# Apply Latent Dirichlet Modelling with k = 2 Topics ---------------
+
+taylor_swift_lyrics_lda <- LDA(x = taylor_swift_lyrics_dtm, k = 2, control = list(seed = 1234))
+
+
+taylor_swift_lyrics_topics <- as_tibble(tidy(x = taylor_swift_lyrics_lda, matrix = "beta"))
+
+
+# Plot the data --------------------------
+
+p_taylor_swift_topics <- taylor_swift_lyrics_topics %>% group_by(topic) %>% 
+  top_n(n = 5, wt = beta) %>%
+  ungroup() %>% 
+  arrange(topic, -beta) %>% 
+  mutate(topic = str_c("Taylor Swift Topic", topic, sep = " ")) %>% 
+  ggplot() + 
+  geom_segment(mapping = aes(x = 0, y = reorder_within(term, beta, topic), xend = beta, yend = reorder_within(term, beta, topic), colour = term), show.legend = FALSE, size = 1.0, na.rm = TRUE) + 
+  geom_point(mapping = aes(x = beta, y = reorder_within(term, beta, topic), colour = term), show.legend = FALSE, size = 3, na.rm = TRUE) + 
+  scale_y_reordered() + 
+  scale_color_brewer(palette = "Paired") + 
+  facet_wrap(facets = ~topic, scales = "free") + 
+  theme_solarized(light = FALSE, base_size = 10) + 
+  theme(axis.text = element_text(color = "goldenrod1"), 
+        axis.title = element_text(color = "goldenrod1", face = "bold.italic"), 
+        strip.text = element_text(face = "bold")) + 
+  labs(x = "Beta Probablity", 
+       y = "")
+
+
+
+# Combine the plos with Patchwork Package -------------------
+
+p_topic_modelling <- (p_beyonce_topics / p_taylor_swift_topics) + plot_layout(guides = 'collect') + 
+  plot_annotation(title = "Beyonce & Taylor Swift Lyrics", 
+                  subtitle = "Topic Modelling with k = 2 Topics", 
+                  theme = theme_solarized(light = FALSE, base_size = 12) + theme(plot.title = element_text(color = "goldenrod1", face = "bold", size = 12), 
+                                                                                 plot.subtitle = element_text(color = "goldenrod1", face = "bold.italic", size = 10)))
+
+
+
+
+p_topic_modelling
+
+
+# Save the Plot ----------------------------------------------
+
+
+ggsave(filename = "D:\\R for Data Science\\R plots\\Beyonce_Taylor_Songs\\p_topic_modelling.png", plot = p_topic_modelling)
 
 
 
