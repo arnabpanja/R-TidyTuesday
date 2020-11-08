@@ -1,0 +1,338 @@
+---
+title: "Tidy Tuesday - IKEA Data Set"
+author: "Arnab Panja"
+date: "07/11/2020"
+output: html_document
+---
+
+### Data Analysis
+
+The Tidy Tuesday Week involved the IKEA Data Set. We show you how a typical data analysis of a data set progresses in R. 
+
+
+```{r setup, include=FALSE, warning=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(janitor)
+library(patchwork)
+library(randomForest)
+library(mltools)
+```
+
+The data analysis starts with loading the data in an R dataframe. The below code snippet loads the IKEA data set and also shows the below two very important attributes of the data 
+
+1. Number of observations
+2. Number of variables/features
+
+```{r load_data, include=FALSE, echo=TRUE, warning=FALSE}
+ikea_data <- read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2020/2020-11-03/ikea.csv') %>% janitor::clean_names() %>% remove_empty(which = "rows")
+
+```
+
+```{r observe_data, include=TRUE, echo=TRUE}
+names(ikea_data)
+dim(ikea_data)
+```
+
+As we can see above there are 14 variables in the data set and 3694 observations. 
+
+Now let us see the first few records of the data set. 
+```{r inspect_data, include=TRUE, echo=TRUE}
+head(ikea_data)
+```
+
+We now observe the below variables of the data set. The below variables are focussed as we would try and predict the prices of the furniture based on a few predictors. 
+
+```{r inspect_subset, include=TRUE, echo=FALSE}
+
+ikea_data %>% select(category, 
+                     name, 
+                     sellable_online, 
+                     depth, 
+                     height, 
+                     width) %>% head()
+
+```
+
+As we can see the data has lots of NA values. Lets study them first. 
+
+```{r inspect_na, echo=TRUE, include=TRUE}
+rbind(ikea_data %>% count(depth, sort = TRUE) %>% filter(is.na(depth)) %>% 
+  mutate(type = "depth") %>% select(type, count_na = n), 
+ikea_data %>% count(height, sort = TRUE) %>% filter(is.na(height)) %>% 
+  mutate(type = "height") %>% select(type, count_na = n), 
+ikea_data %>% count(width, sort = TRUE) %>% filter(is.na(width)) %>% 
+  mutate(type = "width") %>% select(type, count_na = n))
+```
+
+We have identified lots of observations with NA values. How we deal with NA values is a very interesting concern in its own right. Here we assume that not all furnitures will have all three dimensions and in some cases we will have 2 out of 3 dimensions and the third dimension may not be relevant at all. With this understanding (this is where domain knowledge plays a crucial role) lets try and replace the NA values in depth, height and width with zero.  
+
+```{r replace_nas, include=TRUE, echo=TRUE}
+ikea_data$height <- ifelse(is.na(ikea_data$height), 0, ikea_data$height)
+ikea_data$width <- ifelse(is.na(ikea_data$width), 0, ikea_data$height)
+ikea_data$depth <- ifelse(is.na(ikea_data$depth), 0, ikea_data$height)
+```
+
+The above piece of code quite succintly replaces all NA values with zeroes in height, depth and width.  
+
+So we now have `r nrow(ikea_data)` observations to work with all having complete values in them. 
+
+
+```{r check_nums, echo=TRUE, include=TRUE}
+ikea_data %>% count(category, sort = TRUE) %>% 
+  ggplot() + 
+  geom_col(mapping = aes(x = n, 
+                         y = reorder(category, n)), 
+           show.legend = FALSE, 
+           width = 0.75, 
+           fill = "yellow", 
+           color = "navyblue") +
+  geom_text(mapping = aes(x = n, 
+                          y = reorder(category, n), 
+                          label = n), 
+            hjust = "top", 
+            nudge_y = 0.1, 
+            size = 2.5, 
+            color = "navyblue", 
+            fontface = "bold") + 
+  labs(x = "Numbers per Category", 
+       y = "Category", 
+       title = "IKEA Furnitures")
+```
+We , for the purposes of further study will concentrate on the furtniture category that has most number of observations. 
+
+``` {r test_data, include = TRUE, echo=TRUE}
+
+max_cat <- ikea_data %>% 
+  group_by(category) %>% 
+  summarise(cnt = n(), .groups = "drop_last") %>% 
+  ungroup() %>% 
+  filter(cnt == max(cnt))
+
+max_cat
+
+```
+
+So there are `r max_cat$cnt` `r max_cat$category` that are the most frequent in this data set. Now lets create a smaller subset of data with only this furniture and create a regression model to predict the price of this category of the furniture based on the following 4 variables
+
+1. Depth
+2. Width
+3. Height
+4. Whether the `r max_cat$category` is sellable online or not
+
+So lets first create this smaller subset of data as below
+
+```{r data_set, include=TRUE, echo=TRUE}
+ikea_data_sub <- ikea_data %>% select(item_id, 
+                                      category, 
+                                      sellable_online,
+                                      depth, 
+                                      height, 
+                                      width, 
+                                      price) %>% 
+  filter(category == max_cat$category) %>% 
+  mutate(sellable_online = case_when(sellable_online == "TRUE" ~ 1,
+                                                   TRUE ~ 0)) 
+
+head(ikea_data_sub)
+```
+
+What is the distribution of the sellable online marker? Here it is. 
+
+```{r sellable, include=TRUE, echo=FALSE}
+ikea_data_sub %>% count(sellable_online, sort = TRUE)
+```
+
+Since most of the observations are sellable online, so we remove this from our prediction analysis. A variable that does not vary will not impact the response. With this argument we further narrow down the predictors by removing sellable online indicator. 
+
+```{r subset_ikea, include=TRUE, echo=TRUE}
+
+ikea_data_sub <-  ikea_data_sub %>% select(item_id, 
+                                           height, 
+                                           width, 
+                                           depth, 
+                                           price)
+
+head(ikea_data_sub)
+```
+
+Let us now plot to see the relationship between the different dimensions and the price of the item. 
+
+```{r plot_relation, include=TRUE, echo=TRUE}
+
+p_height <- ikea_data_sub %>% filter(height != 0) %>% 
+  ggplot() + 
+  geom_point(mapping = aes(x = height, y = price), 
+             color = "navyblue", 
+             show.legend = FALSE, position = "jitter") + 
+  geom_smooth(mapping = aes(x = height, y = price), 
+              show.legend = FALSE, 
+              method = "loess", 
+              formula = "y ~ x") + 
+  scale_x_continuous(labels = function(x) format(x, scientific = FALSE)) + 
+  labs(x = "Height (in cms)", 
+       y = "Price")
+
+
+
+p_width <- ikea_data_sub %>% filter(width != 0) %>% 
+  ggplot() + 
+  geom_point(mapping = aes(x = width, y = price), 
+             color = "navyblue", 
+             show.legend = FALSE, position = "jitter") + 
+  geom_smooth(mapping = aes(x = width, y = price), 
+              show.legend = FALSE, 
+              method = "loess", 
+              formula = "y ~ x") + 
+  scale_x_continuous(labels = function(x) format(x, scientific = FALSE)) + 
+  labs(x = "Width (in cms)", 
+       y = "Price")
+
+p_depth <- ikea_data_sub %>% filter(depth != 0) %>% 
+  ggplot() + 
+  geom_point(mapping = aes(x = depth, y = price), 
+             color = "navyblue", 
+             show.legend = FALSE, position = "jitter") + 
+  geom_smooth(mapping = aes(x = depth, y = price), 
+              show.legend = FALSE, 
+              method = "loess", 
+              formula = "y ~ x") + 
+  scale_x_continuous(labels = function(x) format(x, scientific = FALSE)) + 
+  labs(x = "Depth (in cms)", 
+       y = "Price")
+
+```
+
+The patchwork package in R helps in combining more than one plots into a single plot as shown below. 
+
+``` {r patch_plot, include=TRUE, echo=TRUE}
+
+(p_height + p_depth)/p_width + 
+  plot_annotation(title = paste0(max_cat$category), 
+                  subtitle = "Relations between Dimensions and Price in Saudi Riyals")
+
+```
+
+As we can see the 3 predictors and the repsonse do not really follow a linear relationship. The residuals of a linear model may be too high to reconcile with the actual response value. Also at width of 75 cms, height of 90 cms there is a large variation of price. This itself indicates there must be other predictors that also control the price of the furniture.
+
+A non-linear model i.e. a decision tree or an ensemble of decision trees might be a better model of the response based on the predictors height, width and depth. 
+
+In the next section of the document we will build a decision tree model using the R package randomForest to predict the price of `r max_cat$category` using the depth, width and height as the predictors.
+
+### Statistical Modelling - Random Forest/Bagging
+
+We now split the data into a 80:20 training and test data set and create the X matrix and the response vector to be fed into the random forest model 
+
+```{r data_split, include=TRUE, echo=TRUE}
+set.seed(1234)
+
+# convert the tibble into a data frame before modelling
+ikea_data_sub <- as.data.frame(ikea_data_sub)
+
+train <- sample(1:nrow(ikea_data_sub), round(0.8 * nrow(ikea_data_sub), 
+                                             digits = 0))
+
+test <- setdiff(1:nrow(ikea_data_sub), train)
+
+ikea_x <- model.matrix(object = price ~ ., 
+                       data = ikea_data_sub[train, -1])[, -1]
+
+ikea_y <- as.vector(ikea_data_sub[train, "price"])
+
+n_tree <- 64 # no of trees to be used for modelling 
+n_mtry <- 3 # no of predictors to be used to determine internal nodes
+
+```
+
+We now create the random forest model with `r n_tree` trees and all `r n_mtry` predictors to decide the splits of the internal nodes in the decision tree.  
+
+``` {r rforest_model, include=TRUE, echo=TRUE}
+
+rf_price_model <- randomForest(x = ikea_x, 
+                               y = ikea_y, 
+                               ntree = n_tree, 
+                               mtry = n_mtry, 
+                               importance = TRUE)
+
+
+```
+
+Now having created the random forest model with all `r length(colnames(ikea_data_sub)) - 2` predictors we will use this model for predicting the price of the `r max_cat$category` on the test data split. A random forest model using all `r length(colnames(ikea_data_sub)) - 2` predictors is usually called bagging. So we have effectively created a bagging model to predict the price.  
+
+
+``` {r predict_price, include=TRUE, echo=TRUE}
+
+set.seed(1234)
+
+ikea_data_test <- model.matrix(object = price ~ ., data = ikea_data_sub[test, -1])[, -1]
+
+
+rf_price_predict <- predict(object = rf_price_model, newdata = ikea_data_test)
+
+
+```
+
+The predicted values of the price on the test data set is stored in the rf_price_predict vector. Now let us calculate the RMSE of the model on the test data. The MSE(Mean Squared Error), RMSE (Root Mean Squared Error) or the RMLSE (Root Mean Log Squared Error) are the common parameters to judge a statistical model. Here let us use the RMSE and the RMLSE to judge this model. 
+
+
+```{r test_rmse, include=TRUE, echo=TRUE}
+
+v_test_rmse <- round(sqrt(mean((round(rf_price_predict, digits = 0) - ikea_data_sub[test, "price"]) ^ 2)), digits = 2)
+
+
+v_test_rmlse <- round(mltools::rmsle(round(rf_price_predict, digits = 0), 
+               ikea_data_sub[test, "price"]), digits = 2)
+
+as.data.frame(rbind(c("param" = "rmse", "value" = v_test_rmse), 
+                    c("param" = "rmlse", "value" = v_test_rmlse)), 
+              stringsAsFactors = FALSE)
+
+```
+
+So the random forest model above has a test RMSE of `r v_test_rmse` and test test RMLSE of `r v_test_rmlse`. The test RMSE is a high value indicating our model has not been great in predicting the price.
+
+Let us see the importance of the predictors in the model. 
+``` {r importance_fn, include=TRUE, echo=TRUE}
+importance(rf_price_model)
+```
+
+As can be seen height has a high influence on the price. Width and Depth do not have that significant an impact. The Node Purity figures also indicate that including height gives a high node purity and better decision on the price. Width and Depth do not have that much of an impact on node purity. 
+
+What does the above modelling indicate? There may be some other crucial predictors which we might have missed in the data set and hence in the model. What could be other crucial predictors not included here? the build material, the color, the designer and many other features could be having influence in predicting price of the furniture. 
+
+Let us observe the predicted values and actual values side by side for a visualization. 
+
+```{r values_check, include=TRUE, echo=TRUE}
+
+pred_actuals <- as.data.frame(cbind("pred_price" = round(rf_price_predict, digits = 0), "act_price" = ikea_data_sub[test, "price"]), stringsAsFactors = FALSE)
+
+head(pred_actuals)
+
+```
+
+```{r pred_graph, include=TRUE, echo=TRUE}
+
+p_pred_actuals <- ggplot(data = pred_actuals) + 
+  geom_point(mapping = aes(x = act_price, y = pred_price), color = "navyblue", show.legend = FALSE) + 
+  geom_abline(mapping = aes(intercept = 0, slope = 1), show.legend = FALSE, color = "firebrick", linetype = "dashed", size = 2) + 
+  labs(x = "Actual Price", 
+       y = "Predicted Price", 
+       title = "Random Forest Predictions", 
+       subtitle = paste0("Actual vs Predicted Prices of ", max_cat$category))
+
+p_pred_actuals
+
+```
+
+The above graphic shows a very interesting fact. The red dashed line is the slope = 1 line. The model would have predicted well when most of the points are near to this line. 
+But the random forest model that we developed is able to predict the prices when the actual prices are within the range of 800 - 900 Saudi Riyals. It is is in this range that the predicted and actual values are closer to the red dashed line. For `r max_cat$category` having prices above this range the predicted prices are way off the mark. 
+
+
+So this is a demonstration of a data science project comprising the below tasks when presented with a new data set. 
+
+1. Loading the data 
+2. Analysing the data 
+3. Visualizing the data 
+4. Modelling, Predictions & Accuracy Measure
+5. Reporting and Communications via R Markdown
+
