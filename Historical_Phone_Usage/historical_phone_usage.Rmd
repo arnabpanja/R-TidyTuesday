@@ -1,0 +1,345 @@
+---
+title: "Historical Phone Usage"
+author: "Arnab Panja"
+date: '`r Sys.Date()`'
+output:
+  pdf_document: default
+  html_document: default
+---
+
+
+```{r setup, include=FALSE, warning=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(janitor)
+```
+
+
+## Data Analysis 
+
+#### Exploratory Data Analysis 
+
+Let us load the data first and observe the basic few characteritics of the data set. 
+
+``` {r load_data, include=TRUE, echo=TRUE}
+
+mobile <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2020/2020-11-10/mobile.csv', col_types = cols()) %>% 
+  janitor::clean_names() %>% 
+  janitor::remove_empty(which = "rows")
+
+```
+
+The data set has `r dim(mobile)[1]` observations and `r dim(mobile)[2]` variables. The summary of the data can be obtained using the summary function. The summary of the data is as below. 
+
+```{r data_summary, include=TRUE, echo=TRUE}
+summary(mobile)
+```
+
+
+The first few observations can be glanced as well using the head function. 
+
+```{r head_data, include=TRUE, echo=TRUE}
+
+head(mobile)
+
+```
+
+The india data in particular can be glanced as well. The use of filter helps us to select and observe the data country-wise.  
+
+```{r india_data, include=TRUE, echo=TRUE}
+
+mobile %>% filter(str_to_upper(entity) == "INDIA") %>% 
+  head()
+
+```
+
+The India data shows that the mobile subscribers were NIL till the year 1995. From 1995 there has been a growth of the mobile subsriber base as we all Indians can very well agree to this fact. 
+
+Let us see how many distinct countries by continents are present in this data set
+
+```{r data_agg, include=TRUE, echo=TRUE}
+
+mobile %>% distinct(entity, continent) %>% 
+  group_by(continent) %>% 
+  summarise(country_count = n(), .groups = "drop_last") %>% 
+  ungroup() %>% 
+  arrange(-country_count)
+
+```
+
+
+#### Adoption of Mobile Phones
+
+Now lets us plot the number of subscribers as a function of year for each of the countries. We will take the mean per year for every continent and then plot the mean subscribers with the year. This will give us a visualization to compare the growth of subscribers across the continents
+
+```{r plot_subscribers, include=TRUE, echo=TRUE}
+
+mobile %>% select(year, 
+                  mobile_subs, 
+                  continent) %>% 
+  group_by(continent, year) %>% 
+  summarise(mean_subs = round(mean(mobile_subs, na.rm = TRUE), digits = 4), 
+            .groups = "drop_last") %>% 
+  ungroup() %>% 
+  ggplot() + 
+  geom_point(mapping = aes(x = year, 
+                           y = mean_subs, 
+                           color = continent), 
+             show.legend = TRUE) + 
+  geom_line(mapping = aes(x = year, 
+                           y = mean_subs, 
+                           color = continent), 
+             show.legend = TRUE) + 
+  scale_x_continuous(breaks = seq(1990, 2025, 5), 
+                     labels = seq(1990, 2025, 5)) + 
+  scale_color_brewer(palette = "Set1") +
+  theme(text = element_text(size = 10), 
+        plot.title = element_text(face = "bold")) + 
+  labs(x = "Year", 
+       y = "Subscriptions", 
+       title = "Adoption of Mobile Phones", 
+       subtitle = "Mean Subscriptions per 100 people")
+
+```
+
+The graphic above shows how mobile phones have been adopted in the continents. Growth of the adoption of mobile phones have been in the following sequence:- 
+
+1. Europe
+2. Americas
+3. Asia
+4. Oceania
+5. Africa
+
+#### Subscribers & Mean GDP per capita at PPP
+
+The number of subscribers can be a function of GDP and the Population of a particular period of time. Lets see the variation of mobile subscribers with the mean GDP of the world as well with mean population of the world. 
+
+```{r plot_gdp, include=TRUE, echo=TRUE}
+
+mobile %>% select(year, 
+                  mobile_subs, 
+                  gdp_per_cap) %>% 
+  mutate(gdp_per_cap = replace_na(gdp_per_cap, 0), 
+          mobile_subs = replace_na(mobile_subs, 0)) %>% 
+  group_by(year) %>% 
+  summarise(mean_gdp = mean(gdp_per_cap), 
+            mean_subs = mean(mobile_subs, na.rm = TRUE), 
+            .groups = "drop_last") %>% 
+  ungroup() %>% 
+  arrange(year) %>% 
+  ggplot() + 
+  geom_point(mapping = aes(x = mean_gdp, 
+                          y = mean_subs), 
+            show.legend = FALSE, 
+            color = "red") + 
+  geom_smooth(mapping = aes(x = mean_gdp, 
+                            y = mean_subs), 
+              method = "lm", 
+              formula = "y ~ x", 
+              color = "navyblue") + 
+  theme(text = element_text(size = 10), 
+        plot.title = element_text(face = "bold")) + 
+  labs(x = "Mean GDP", 
+       y = "Mean Subscribers", 
+       title = "Mobile Phones & GDP", 
+       subtitle = "Growth of Mobile Subscriptions with increasing GDP")
+
+```
+
+
+#### Subscribers & Mean Population
+
+Now let us see the growth of mobile subscriptions with the growing population of the world. With a growing population there will normally be a greater demand of mobile phones. The reason being there will be a greater need of communication with a growing population. GDP also plays a part in this. Let us study the variation below using some plots. 
+
+```{r plot_pop, include=TRUE, echo=TRUE}
+
+mobile %>% select(year, 
+                  mobile_subs, 
+                  total_pop) %>% 
+  mutate(total_pop = replace_na(total_pop, 0), 
+          mobile_subs = replace_na(mobile_subs, 0)) %>% 
+  group_by(year) %>% 
+  summarise(mean_pop = mean(total_pop), 
+            mean_subs = mean(mobile_subs, na.rm = TRUE), 
+            .groups = "drop_last") %>% 
+  ungroup() %>% 
+  arrange(year) %>% 
+  ggplot() + 
+  geom_point(mapping = aes(x = mean_pop, 
+                          y = mean_subs), 
+            show.legend = FALSE, 
+            color = "red") + 
+  scale_x_continuous(labels = function(x) format(x, scientific = FALSE)) +
+  theme(text = element_text(size = 10), 
+        plot.title = element_text(face = "bold")) + 
+  labs(x = "Mean Population", 
+       y = "Mean Subscribers", 
+       title = "Mobile Phones & Population (Missing Data)", 
+       subtitle = "Growth of Mobile Subscriptions with rising population")
+
+
+```
+
+The graphic above shows that the mean subscribers are recorded for a set of observations with mean population as zero (the points on the top left of the above graphic). 
+This looks like a data quality issue where the population data have not been recorded and replacing them with zero has not been correct. Let us see which of the records have this issue and examine if there is a better way to fill the missing population values. 
+
+```{r dq_issue, include=TRUE, echo=TRUE}
+
+mobile %>% select(year, 
+                  mobile_subs, 
+                  total_pop) %>% 
+  mutate(total_pop = replace_na(total_pop, 0), 
+          mobile_subs = replace_na(mobile_subs, 0)) %>% 
+  group_by(year) %>% 
+  summarise(mean_pop = mean(total_pop), 
+            mean_subs = mean(mobile_subs, na.rm = TRUE), 
+            .groups = "drop_last") %>% 
+  ungroup() %>% 
+  filter(mean_pop == 0, mean_subs != 0)
+
+```
+
+Let us inspect a bit further to see which observations have resulted in this issue. 
+
+```{r dq_issue_1, include=TRUE, echo=TRUE}
+
+mobile %>% select(year, 
+                  mobile_subs, 
+                  total_pop) %>% 
+  filter(year == 2014) %>% 
+  head()
+
+```
+
+So we see that population data has not been recorded for the years 2014, 2015, 2016, 2017 as we predicted. 
+
+So let us now quickly see how the mean population has been varying with year till 2013. 
+
+```{r pop_var_1, include=TRUE, echo=TRUE}
+
+pop_df <- mobile %>% select(year, total_pop) %>% 
+  filter(year <= 2013) %>% 
+  group_by(year) %>% 
+  summarise(mean_pop = mean(total_pop, na.rm = TRUE), 
+            .groups = "drop_last") %>% 
+  arrange(year)
+
+
+ggplot(data = pop_df, mapping = aes(x = year, y = mean_pop)) + 
+  geom_point(color = "red", show.legend = FALSE) + 
+  theme(text = element_text(size = 10), 
+        plot.title = element_text(face = "bold")) + 
+  labs(x = "Year", 
+       y = "Mean Population", 
+       title = "Population Variation", 
+       subtitle = "Linear Relationship with year")
+
+```
+
+## Statistical Modelling - Missing Population Data 
+
+#### Linear Regression
+
+Since the relationship appears to be a linear one we can fit a linear model and predict the mean populations for the missing years 2014, 2015, 2016 and 2017. So let us do that now. 
+
+```{r lm_model, include=TRUE, echo=TRUE}
+
+lm_model <- lm(formula = mean_pop ~ year, 
+               data = pop_df)
+
+summary(lm_model)
+
+```
+
+The summary of the linear model gives a high value of R-Squared meaning the model is quite reliable for predicting mean population for the missing years. A high value of the R-Squared/Adjusted R-Squared or a very low p-value are indicative of the model being a good fit of the data. 
+
+We now use this model to predict the mean population of the missing years 2014, 2015, 2016 and 2017. 
+
+```{r predict_output, include=TRUE, echo=TRUE}
+# create test data frame
+test_df <- data.frame(year = c(2014:2017), 
+                        stringsAsFactors = FALSE)
+
+# predict the missing population values 
+predict_pop <- predict(object = lm_model, newdata = test_df)
+
+new_pop_df <- as_tibble(cbind("year" = test_df$year, 
+                              mean_pop = predict_pop))
+
+new_pop_df
+
+```
+
+So now having calculated the mean population for the missing years we go back to get the plot for the variation of population with subscribers for all years till 2014 and beyond as far as the population values were recorded. 
+
+```{r recreate_plot, include=TRUE, echo=TRUE}
+
+pop_study_1 <- mobile %>% select(year, 
+                  mobile_subs, 
+                  total_pop) %>% 
+  filter(year < 2014 | year > 2017) %>% 
+  mutate(total_pop = replace_na(total_pop, 0), 
+          mobile_subs = replace_na(mobile_subs, 0)) %>% 
+  group_by(year) %>% 
+  summarise(mean_pop = mean(total_pop), 
+            mean_subs = mean(mobile_subs, na.rm = TRUE), 
+            .groups = "drop_last") %>% 
+  ungroup() %>% 
+  arrange(year)
+
+# combine the missing values as well 
+pop_study_2 <- bind_cols(mobile %>% select(year, 
+                  mobile_subs, 
+                  total_pop) %>% 
+  filter(year >= 2014 & year <= 2017) %>% 
+  mutate(mobile_subs = replace_na(mobile_subs, 0)) %>% 
+  group_by(year) %>% 
+  summarise(mean_subs = mean(mobile_subs), 
+            .groups = "drop_last") %>% 
+  ungroup() %>% 
+  arrange(year), "mean_pop" = new_pop_df$mean_pop) %>% 
+  select(year, mean_pop, mean_subs)
+
+# combined data set with all filled up population values
+pop_study_comb <- bind_rows(pop_study_1, pop_study_2)
+
+head(pop_study_comb)
+
+
+```
+
+Now having prepared the data frame after predicting and adding the predicted values back for the missing mean populations we take a look at the plot once again as below for mean subscribers and its growth with the mean population. 
+
+```{r plot_updated, include=TRUE, echo=TRUE}
+
+ggplot(data = pop_study_comb) + 
+  geom_point(mapping = aes(x = mean_pop, 
+                          y = mean_subs), 
+            show.legend = FALSE, 
+            color = "red") + 
+  geom_smooth(mapping = aes(x = mean_pop, 
+                          y = mean_subs), 
+              method = "lm", 
+              formula = "y ~ x", 
+              show.legend = FALSE) + 
+  scale_x_continuous(labels = function(x) format(x, scientific = FALSE)) +
+  theme(text = element_text(size = 10), 
+        plot.title = element_text(face = "bold")) + 
+  labs(x = "Mean Population", 
+       y = "Mean Subscribers", 
+       title = "Mobile Phones (With Predicted Populations)", 
+       subtitle = "Growth of Mobile Subscriptions with rising population")
+
+```
+
+So this analysis gives a very good insight into how during an analysis we can identify some missing observations and how the nature of the variables can be studied to create a statistical model to predict the missing values. These predicted values can then be substituted for the missing values with the original full data and the analysis can be proceeded based on that with a reasonable degree of accuracy. 
+
+This notebook therefore demonstrates the following three critical aspects of data science
+
+1. Exploratory Data Analysis
+2. Data Visualization
+3. Identification of missing values
+4. Prediction of the missing values using a statistical model 
+
+
+
