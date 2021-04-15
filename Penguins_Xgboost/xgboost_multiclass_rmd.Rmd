@@ -1,0 +1,405 @@
+---
+title: "R - An Approach to Multi-class Classification Problem using XGboost"
+author: "Arnab Panja"
+date: '`r Sys.Date()`'   
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE, warning=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse, warn.conflicts = FALSE)
+library(palmerpenguins, warn.conflicts = FALSE)
+library(xgboost, warn.conflicts = FALSE)
+```
+
+# 1. Introduction 
+
+Multi-class non-linear tree based classification problem is quite common in the real business world of machine learning and statistical modeling. Its just a few days back I thought upon a requirement to classify a set of data into one among a set of classications. This notebook attempts to devise an approach to solve this problem.
+
+We take the palmerpenguins data set from Allison Horst to identify a multi-level classification problem and then attempt to devise a statistical model for predicting the classes for a test data set. 
+
+This paper is inspired by the above problem definition and the Rpubs Link **https://rpubs.com/dalekube/XGBoost-Iris-Classification-Example-in-R**. This link has applied the same principles on the IRIS data set. The below approach has applied the same principles on the Palmer Penguins data set and in the process has touched upon the uses of the below concepts of R
+
+1. Handling missing data
+2. apply() function
+3. vector look ups
+4. Xgboost's multi-class classification
+5. data visualization with ggplot 
+ 
+
+So we first load the palmer penguins data. 
+
+```{r data_load,include=TRUE,echo=TRUE}
+# Load the data into a data frame 
+penguins_data_full <- palmerpenguins::penguins
+
+
+penguins_data_full <- as.data.frame(penguins_data_full, 
+                                    stringsAsFactors = FALSE)
+
+
+# describe the data 
+dim(penguins_data_full)
+names(penguins_data_full)
+
+```
+
+As we can observe the palmer penguins data set contains 344 observations and 8 variables. The names of the variables are also as printed by the dim function above. 
+
+The summary of the data can also be checked using the summary function as below
+
+
+```{r data_summary,include=TRUE,echo=TRUE}
+# Summary 
+summary(penguins_data_full)
+
+```
+
+# 2. Handling Missing Data 
+
+
+
+The summary function quite clearly indicates the presence of NA values (missing values) in the data set. The missing values can also be found by using the apply function on all the variables of the data set. The **MAGIC !!!** of the apply() function is put to good use here. 
+
+
+
+```{r miss_values,include=TRUE,echo=TRUE}
+v_na_values <- apply(X = penguins_data_full, 
+                     MARGIN = 2, 
+                     FUN = function(x) sum(is.na(x)))
+
+
+v_na_values[v_na_values > 0]
+
+```
+
+
+The first statement stores the count of NA values for all the variables using the apply() function (is this not a wonderful way !!!) and then the second statement outputs just the variables which have NA values in them. 
+
+We now attempt to handle the missing values in these variables. 
+
+1. For numeric variables we take the mean value and replace the missing values with this mean value. 
+2. For character variable sex we replace the missing observation with the sex value that has occured the most in the data set. 
+
+This is done in just a few steps as below
+
+```{r rep_missing, include=TRUE, echo=TRUE}
+# populate missing values with mean of each numeric variables
+
+penguins_data_full[, c(3, 4, 5, 6)] <- 
+  apply(X = penguins_data_full[, c(3, 4, 5, 6)], MARGIN = 2, 
+  FUN = function(x) ifelse(is.na(x), 
+                           round(mean(x, na.rm = TRUE),digits = 1),x))
+
+# populate missing sex values with maximum occurrences of sex type
+penguins_data_full$sex <- ifelse(
+  is.na(penguins_data_full$sex), 
+  names(table(penguins$sex)[table(penguins$sex) == max(table(penguins$sex))]), 
+                                 as.character(penguins_data_full$sex))
+
+```
+
+
+Once again we see the **MAGIC !!!** of the apply() functions to replace the missing values in the data set with the mean value. The vectorized functions in R are its most impressive aspects though it can be daunting to understand it first and then apply them to suitable situations. The above is one such situation where in other programming languages this would have been done by using loops but in R the vectorized apply() function is quite fast and does the work. 
+
+# 3. Statistical Modeling 
+
+
+
+We would now like to build a tree-based non-linear model that would predict the species of a penguin given the 5 predictors as below 
+
+1. bill depth
+2. bill length
+3. flipper length
+4. body mass 
+5. sex
+
+So with this objective we set out to prepare the predictor variables and the response variables so that it can fed into the xgboost algortihm. 
+
+```{r prep_data, include=TRUE, echo=TRUE}
+# removing unwanted variables island and year 
+# from modeling - island and year  
+penguins_data <- penguins_data_full[, -c(2, 8)]
+
+# converting the factor variables into a sparse integer matrix
+# for xgboost inputs 
+
+penguins_data$sex <- as.integer(as.factor(penguins_data$sex))
+
+# IMPORTANT TO NOTE :- 
+# the response classes needs to be converted to 
+# integers STARTING from 0. Hence a -1 is done
+
+penguins_data$species <- as.integer(as.factor(penguins_data$species)) - 1
+
+```
+
+
+## 3a. Split Train and Test Data
+
+
+We now start the modeling process by performing the below 3 steps
+
+1. Split the data set into a 80:20 ratio, where the 80% of the observations will form the training set and the remaining 20% the test set
+2. We define the parameerts of the xgboost algorithm 
+3. We then train the xgboost model with the selected parameters and the training data set
+
+```{r split_data, include=TRUE, echo=TRUE}
+
+set.seed(1234)
+
+
+# splitting the data set into train and test 
+train_index <- sample(1:nrow(penguins_data), round(0.8*nrow(penguins_data), 
+                                                   digits = 0))
+test_index <- setdiff(1:nrow(penguins_data), 
+                      train_index)
+
+
+# create the training variables and label variables for training 
+penguins_train <- as.matrix(penguins_data[train_index, -1])
+label_train <- as.matrix(penguins_data[train_index, 1])
+
+# create the test variables and label variables for testing 
+penguins_test <- as.matrix(penguins_data[test_index, -1])
+label_test <- as.matrix(penguins_data[test_index, 1])
+
+
+# create the xgb.Dmatrix objects for train and test
+xgb_train <- xgb.DMatrix(data = penguins_train, 
+                         label = label_train)
+xgb_test <- xgb.DMatrix(data = penguins_test, 
+                        label = label_test)
+
+```
+
+Please note that for xgboost model we need the input dataset to be transformed into a sparse matrix (xgb.Dmatrix object). This is accomplished as above. The response variable is also converted into an integer matrix starting with 0. These are all pre-requisites for training the xgboost model. 
+
+
+## 3b. Parameters of the Model
+
+
+We now define the parameters of the model and train the model using the below set of scripts
+
+```{r def_params, include=TRUE, echo=TRUE}
+
+# Find the number of classification outcomes 
+no_classes <- length(unique(penguins_data$species))
+
+# Create the parameter list for xgboost 
+param_list <- list(booster = "gbtree", 
+                   eta = 0.001, 
+                   max_depth = 5, 
+                   gamma = 3, 
+                   subsample = 0.75, 
+                   colsample_bytree = 1, 
+                   objective = "multi:softprob", 
+                   eval_metric = "mlogloss", 
+                   num_class = no_classes)
+
+```
+
+As can be seen the objective is set as multi:softprob. This will help determine the probabilities for an observation to be in the different species.
+
+## 3c. Model Formation
+
+We now would fit an xgboost model with the above parameters. 
+
+```{r train_model, include=TRUE, echo=TRUE}
+
+xgb_fit <- xgb.train(params = param_list, 
+                     data = xgb_train, 
+                     nrounds = 10000,
+                     early_stopping_rounds = 10, 
+                     watchlist = list(val1 = xgb_train, 
+                                      val2 = xgb_test), 
+                     verbose =  0)
+
+# Results converging after 4035 iterations 
+xgb_fit
+
+```
+
+
+We see that the model converges after about 4000 iterations which is an indicator that the predictions of the model have shown a very low error consistently. 
+
+## 3c. Model Predictions
+
+
+
+We now use the trained model to predict the outputs on the test observations. 
+
+```{r pred_outputs, include=TRUE, echo=TRUE}
+# predicting new responses 
+xgb_pred <- predict(object = xgb_fit, 
+                    newdata = penguins_test, 
+                    reshape = TRUE)
+
+xgb_pred <- as.data.frame(xgb_pred, stringsAsFactors = FALSE)
+
+xgb_pred$max_pred <- apply(X = xgb_pred, 
+                                 MARGIN = 1, 
+                                 FUN = function(x)           
+                                 colnames(xgb_pred)[which.max(x)])
+
+```
+
+As we had mentioned the predictions below in columns V1, V2 and V3 are the probability of a test observation to belong to these classes. V1, V2 and V3 would correspond to the levels of the factor variable species. The output predicted data with probailities is as below. 
+
+
+```{r pred_data,include=TRUE,echo=FALSE}  
+
+head(xgb_pred)
+
+```
+
+
+We observe that each of the records have a probaility and the apply() function above has selected the class corresponding to the maximum probability. We definitely need to map the class variables V1, V2, V3 to their actual species which we will do below using another of R's **MAGIC !!!** of vector lookups.  
+We also now calculate the prediction accuracy of the model. All of these steps are accomplished by the below scripts. 
+
+
+## 3d. Prediction Accuracy
+
+The accuracy of the predictions from the model can be determined with the following steps and visualizations. 
+
+```{r pred_acc_1, include=TRUE, echo=TRUE}
+
+# Calculating prediction accuracy 
+
+v_species_lkp <- levels(penguins_data_full$species)
+names(v_species_lkp) <- c("V1", "V2", "V3")
+
+xgb_pred$species <- unname(v_species_lkp[xgb_pred$max_pred])
+
+final_penguins_data <- cbind(penguins_data_full[test_index, ], 
+                             "pred_species" = xgb_pred$species)
+
+# first 6 rows of the predicted data set 
+head(final_penguins_data[, c(1, 3, 4, 5, 6, 7, 9)])
+
+```
+
+
+The test observations with the predicted species alongside in the last variable shows a glimpse of the output above. As we can see from the scripts the levels of the species have defined a look up vector and this has been used to look up and determine the predicted species. 
+
+The confusion matrix of the model is as determined below
+
+
+```{r pred_acc_2, include=TRUE, echo=TRUE}
+
+# distribution & reconciliation counts 
+# per group 
+
+df_conf_matrix <- as_tibble(final_penguins_data) %>% 
+  count(species, 
+        pred_species, 
+        sort = TRUE) %>% 
+  mutate(recon = ifelse(species == pred_species, 
+                        "matched", 
+                        "not matched")) %>% 
+  arrange(recon, species, pred_species) 
+
+df_conf_matrix
+
+v_matched <- as_vector(df_conf_matrix %>% 
+                         filter(recon == "matched") %>% 
+  group_by() %>% summarise(matched = sum(n)))
+
+v_unmatched <- as_vector(df_conf_matrix %>% 
+                           filter(recon == "not matched") %>% 
+  group_by() %>% summarise(matched = sum(n)))
+
+
+
+```
+
+
+And the prediction accuracy as below 
+
+
+```{r pred_acc_3, include=TRUE, echo=TRUE}
+
+# prediction accuracy figure  
+pred_accuracy <- 
+  round(sum(ifelse(final_penguins_data$species == 
+                     final_penguins_data$pred_species, 
+                     1, 
+                     0))/nrow(final_penguins_data) * 100, digits = 2)
+
+# Print - Prediction Accuracy value of xgboost prediction 
+paste0("Prediction Accuracy = ", pred_accuracy, "%")
+
+```
+
+
+We observe that the prediction accuracy of the model is significantly high.  
+
+The confusion matrix is a good visualization to understand the number of observations where the predictions have come good and where they have failed. Let us plot this data using the lovel ggplot package and the two geoms - geom_point and geom_text. 
+
+No work in R can be complete without the awesome  **ggplot() package** plot. 
+
+```{r data_viz_1, include=TRUE, echo=TRUE}
+
+# Visualization of Confusion Matrix
+
+p_confusion_matrix <- as_tibble(final_penguins_data) %>% 
+  count(species, 
+        pred_species, 
+        sort = TRUE) %>% 
+  mutate(recon = ifelse(species == pred_species, 
+                        "matched", 
+                        "not matched")) %>% 
+  arrange(recon, species, pred_species) %>% 
+  ggplot() +
+  geom_point(mapping = aes(x = species, 
+                           y = pred_species, 
+                           color = recon), 
+             show.legend = FALSE, 
+             size = 10) + 
+  geom_text(mapping = aes(x = species, 
+                          y = pred_species, 
+                          label = n), 
+            show.legend = FALSE, 
+            size = 4, 
+            color = "black", 
+            fontface = "bold") + 
+  scale_color_brewer(palette = "Accent") + 
+  theme(axis.title = element_text(face = "bold"), 
+        plot.subtitle = element_text(face = "bold"), 
+        plot.title = element_text(face = "bold")) + 
+  labs(x = "Actual Species", 
+       y = "Predicted Species", 
+       title = "XGBoost - Multi-Class Prediction", 
+       subtitle = "Confusion Matrix")
+
+p_confusion_matrix
+
+```
+
+As the above visualizations show, the number of observations where the predictions have matched are 
+`r v_matched[1]` and where they have not matched are 
+`r v_unmatched[1]`. This essentially means that given the predictors as above the xgboost model is able to predict the species of the penguins with a very high degree of accuracy.
+
+# 4. Conclusions & References 
+
+
+The analysis here has helped us understand the below concepts and its applications using the R Programing Language 
+
+1. Handling missing data
+2. Using R's apply() function and vector look ups
+3. Applying xgboost algorithm to approach a mulit-class classification problem
+
+
+The details of the data set and the reference link which inspired me to write this and apply them on the penguins data set is mentioned as below. 
+
+**Data Set** :- https://allisonhorst.github.io/palmerpenguins/
+
+
+**Reference Link** :- https://rpubs.com/dalekube/XGBoost-Iris-Classification-Example-in-R
+
+
+**Tidy Tuesday** :- https://github.com/rfordatascience/tidytuesday
+
+
